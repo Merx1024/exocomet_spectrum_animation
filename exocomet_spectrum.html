@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Exocomet Spectrum</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100vh;
+  background: #08090f;
+  color: #d0dce8;
+  font-family: 'Georgia', serif;
+  overflow: hidden;
+  user-select: none;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px 12px;
+  gap: 10px;
+}
+
+
+#transit-wrap {
+  flex: 0 0 50%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+}
+
+#transit-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#bottom {
+  flex: 0 0 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── spectrum panels (H and K side by side) ── */
+#spec-panels {
+  display: flex;
+  gap: 10px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.spec-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+}
+.spec-label {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(208,220,232,0.35);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+.spec-canvas {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── legend bar ── */
+#legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: rgba(208,220,232,0.40);
+  padding: 0 2px;
+}
+.li { display: flex; align-items: center; gap: 5px; }
+.ld { width: 18px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+
+/* ── controls ── */
+#controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+.ctrl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: rgba(208,220,232,0.50);
+  white-space: nowrap;
+}
+.ctrl-val {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d0dce8;
+  min-width: 42px;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  width: 90px; height: 3px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #7bb8e8;
+  cursor: pointer;
+}
+button {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  padding: 4px 13px;
+  border-radius: 4px;
+  border: 0.5px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: #d0dce8;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+button:hover { background: rgba(255,255,255,0.12); }
+button.active { background: rgba(123,184,232,0.15); border-color: rgba(123,184,232,0.45); color: #7bb8e8; }
+</style>
+</head>
+<body>
+
+<div id="transit-wrap">
+  <canvas id="transit-canvas"></canvas>
+</div>
+
+<div id="bottom">
+  <div id="spec-panels">
+    <div class="spec-panel">
+      <div class="spec-label">Ca II K — 3933.66 Å</div>
+      <canvas id="k-canvas" class="spec-canvas"></canvas>
+    </div>
+    <div class="spec-panel">
+      <div class="spec-label">Ca II H — 3968.47 Å</div>
+      <canvas id="h-canvas" class="spec-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="legend">
+<!--  <span class="li"><span class="ld" style="background:#888888"></span>Stellar photosphere</span> -->
+  <span class="li"><span class="ld" style="background:#5ec8a0"></span>Circumstellar disc (stable)</span>
+  <span class="li"><span class="ld" style="background:#e8a87b"></span>Exocomet (transient)</span>
+  <span class="li"><span class="ld" style="background:#7bb8e8"></span>Combined observed</span>
+</div>
+
+<div id="controls">
+  <button id="pbtn" class="active">&#9646;&#9646; Pause</button>
+  <div class="ctrl">Comet RV
+    <input type="range" id="crv" min="-200" max="400" step="5" value="50">
+    <span class="ctrl-val" id="crvv">+50 km/s</span>
+  </div>
+  <div class="ctrl">Disc RV
+    <input type="range" id="drv" min="15" max="25" step="1" value="20">
+    <span class="ctrl-val" id="drvv">+20 km/s</span>
+  </div>
+  <div class="ctrl">Speed
+    <input type="range" id="spd" min="-1" max="1" step="0.1" value="1">
+    <span class="ctrl-val" id="spdv">1.0×</span>
+  </div>
+  <div class="ctrl">Orbit
+    <input type="range" id="orb" min="0" max="1" step="0.0001" value="0">
+    <span class="ctrl-val" id="orbb">0.00</span>
+  </div>
+  <button id="rbtn">&#8635; Reset</button>
+</div>
+
+<script>
+
+
+
+var transitCvs = document.getElementById('transit-canvas');
+var transitCtx = transitCvs.getContext('2d');
+
+
+
+
+/* ────────────────────────────────────────────────
+   EDITABLE PARAMETERS
+   ──────────────────────────────────────────────── */
+var userDraggingOrbit = false;
+var orbitTarget = 0;
+var OSC = {
+  K: 1.0,
+  H: 0.5
+};
+
+var CFG = {
+
+  /*
+    Circumstellar disc gas — narrow, near zero RV (co-rotating with star).
+    This is the "reference" stable feature. LARGE and NARROW compared to comet.
+  */
+  discFWHM:     10,    /* km/s — very narrow. Real disc gas: 5–15 km/s */
+  discDepth:    0.8,   /* Relatively deep. Often comparable to or deeper than exocomet */
+
+  /*
+    Exocomet — transient absorption. Slightly wider and deeper than disc.
+    Doppler-shifted because the comet is on a highly eccentric orbit.
+  */
+  cometFWHM:    60,     /* km/s — wider than disc due to coma velocity spread */
+  cometDepth:   0.3,   /* slightly deeper than disc */
+
+  /*
+    Animation: comet RV oscillates as if we're watching over multiple observations
+    (days apart, different orbital phases of the exocomet).
+    The feature grows in and fades out as the comet moves through the line of sight.
+  */
+  transitDuration: 0.09,  /* fraction of animation cycle the feature is visible */
+
+  /* Display range: ± this value in km/s */
+  rvRange: 200,
+
+  /* H-line is blueshifted by ~17 km/s relative to K in a rest-frame sense,
+     but for this visualisation we plot each line centred on zero so they
+     look identical in shape — only the wavelength label differs. This matches
+     how astronomers typically display them in separate panels. */
+};
+/* ──────────────────────────────────────────────── */
+
+var t = 0;
+var speed = 1.0;
+var playing = true;
+var cometRV = 50;
+var discRV  = 20;
+var pr = window.devicePixelRatio || 1;
+
+var kCvs = document.getElementById('k-canvas');
+var hCvs = document.getElementById('h-canvas');
+var kCtx = kCvs.getContext('2d');
+var hCtx = hCvs.getContext('2d');
+var orbitSlider = document.getElementById('orb');
+var orbitLabel  = document.getElementById('orbb');
+
+/* ── resize ─────────────────────────────────────── */
+function resizeCanvases() {
+  var tw = transitCvs.clientWidth;
+  var th = transitCvs.clientHeight;
+  pr = window.devicePixelRatio || 1;
+  transitCvs.width = Math.round(tw * pr);
+  transitCvs.height = Math.round(th * pr);
+
+  transitCtx.setTransform(pr, 0, 0, pr, 0, 0);
+
+  [kCvs, hCvs].forEach(function(c) {
+    var w = c.clientWidth;
+    var h = c.clientHeight || 200;
+    c.width  = Math.round(w * pr);
+    c.height = Math.round(h * pr);
+    c.style.width = w + 'px';
+    c.getContext('2d').setTransform(pr, 0, 0, pr, 0, 0);
+  });
+}
+window.addEventListener('resize', function() { setTimeout(resizeCanvases, 30); });
+setTimeout(resizeCanvases, 40);
+
+/* ── spectral model ─────────────────────────────── */
+function gauss(rv, centre, fwhm, depth) {
+  var sigma = fwhm / (2.0 * Math.sqrt(2.0 * Math.log(2.0)));
+  return depth * Math.exp(-Math.pow(rv - centre, 2) / (2.0 * sigma * sigma));
+}
+
+/*
+  cometVis: 0 → no comet feature; 1 → full depth.
+  This modulates as a smooth bell over the animation cycle,
+  simulating the comet entering and leaving the line of sight.
+*/
+
+/*function cometVisibility() {
+  return 1.0;
+}
+function cometVisibility() {
+
+  var pos = cometOrbitPos();
+
+  
+  //  Distance from stellar centre
+  
+  var dx = pos.x - pos.cx;
+  var dy = pos.y - pos.cy;
+
+  var r = Math.sqrt(dx * dx + dy * dy);
+
+  
+  //  Stellar radius
+  
+  var starR = transitCvs.clientHeight * 0.12;
+
+  
+  //  Visible ONLY during foreground transit
+  
+  if (pos.z < 0) return 0;
+
+  
+  //  Transit weighting
+  
+  var overlap = 1.0 - Math.min(r / starR, 1.0);
+
+  
+  //  Smooth strength
+  
+  return overlap * overlap;
+}*/
+
+/*function cometVisibility() {
+
+  var pos = cometOrbitPos();
+
+  var dx = pos.x - pos.cx;
+  var dy = pos.y - pos.cy;
+
+  var r = Math.sqrt(dx * dx + dy * dy);
+
+  var starR = transitCvs.clientHeight * 0.12;
+
+  // ONLY geometry that matters: is it transiting?
+  if (r > starR) return 0;
+
+  // smooth ingress/egress inside stellar disk
+  var overlap = 1.0 - (r / starR);
+
+  return overlap * overlap;
+}*/
+
+/*function cometVisibility() {
+  var pos = cometOrbitPos();
+
+  var dx = pos.x - pos.cx;
+  var dy = pos.y - pos.cy;
+  var r = Math.sqrt(dx * dx + dy * dy);
+
+  var starR = transitCvs.clientHeight * 0.12;
+
+  // require both: in front AND near stellar disk
+  if (pos.z < 0) return 0;
+  if (r > starR * 1.5) return 0;
+
+  var overlap = 1.0 - (r / (starR * 1.5));
+  return overlap * overlap;
+}*/
+
+function cometVisibility() {
+  /* Triangle-wave between 0 and 1 over full cycle */
+  var cycle = (t % 1.0 + 1.0) % 1.0;
+  /* Feature present in middle fraction of cycle */
+  var half = CFG.transitDuration / 2.0;
+  var centre = 0.25;
+  var d = Math.abs(cycle - centre);
+  if (d > half) return 0.0;
+  var u = 1.0 - (d / half);
+  /* Smooth raised cosine window */
+  return 0.5 * (1.0 - Math.cos(Math.PI * u));
+}
+
+function specComponents(rv, vis) {
+  /* var stellar = gauss(rv, 0,       CFG.stellarFWHM, CFG.stellarDepth); */
+  var disc    = gauss(rv, discRV,  CFG.discFWHM,    CFG.discDepth);
+  var comet   = vis > 0.005 ? gauss(rv, cometRV, CFG.cometFWHM, CFG.cometDepth * vis) : 0.0;
+  return {disc: disc, comet: comet };
+}
+
+function specTotal(rv, vis) {
+  var c = specComponents(rv, vis);
+
+  // DO NOT clamp here
+  return c.disc + c.comet;
+}
+
+function specComponents_k(rv, vis) {
+  var disc  = gauss(rv, discRV, CFG.discFWHM, CFG.discDepth * OSC.K);
+  var comet = vis > 0.005
+    ? gauss(rv, cometRV, CFG.cometFWHM, CFG.cometDepth * vis * OSC.K)
+    : 0.0;
+
+  return { disc: disc, comet: comet };
+}
+
+function specComponents_h(rv, vis) {
+  var disc  = gauss(rv, discRV, CFG.discFWHM, CFG.discDepth * OSC.K);
+  var comet = vis > 0.005
+    ? gauss(rv, cometRV, CFG.cometFWHM, CFG.cometDepth * vis * OSC.H)
+    : 0.0;
+
+  return { disc: disc, comet: comet };
+}
+
+function specTotal_k(rv, vis) {
+  var c = specComponents_k(rv, vis);
+  return c.disc + c.comet;
+}
+
+function specTotal_h(rv, vis) {
+  var c = specComponents_h(rv, vis);
+  return c.disc + c.comet;
+}
+
+/*function specTotal(rv, vis) {
+  var c = specComponents(rv, vis);
+  return Math.min(1.0, c.disc + c.comet);
+}*/
+
+function cometOrbitPos() {
+
+  var W = transitCvs.clientWidth;
+  var H = transitCvs.clientHeight;
+
+  var cx = W * 0.5;
+  var cy = H * 0.52;
+
+  var rx = W * 0.34;
+  var ry = H * 0.26;
+
+  var ang = t * Math.PI * 2;
+
+  var x = cx + rx * Math.cos(ang);
+  var y = cy + ry * Math.sin(ang);
+
+  /*
+    z determines foreground/background.
+    z > 0 = comet in FRONT of star
+    z < 0 = behind star
+  */
+  var z = Math.sin(ang);
+
+  return {
+    x:x,
+    y:y,
+    z:z,
+    cx:cx,
+    cy:cy
+  };
+}
+
+/* ── draw one spectrum panel ─────────────────────── */
+function drawSpecPanel(ctx, cvs, lineLabel, vis) {
+  var W = cvs.clientWidth;
+  var H = cvs.clientHeight || 200;
+  if (!H || H < 10) return;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#08090f';
+  ctx.fillRect(0, 0, W, H);
+
+  var pl = 40, pr2 = 10, pt = 14, pb = 24;
+  var gw = W - pl - pr2;
+  var gh = H - pt - pb;
+  if (gw < 10 || gh < 10) return;
+
+  var R = CFG.rvRange;
+
+  function rvToX(rv)  { return pl + ((rv / (2.0 * R)) + 0.5) * gw; }
+  function absToY(a)  { return pt + gh * Math.min(Math.max(a, 0), 1.0) * 0.92; }
+
+  /* Grid */
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+  for (var i = 0; i <= 4; i++) {
+    var gy = pt + (i / 4) * gh;
+    ctx.beginPath(); ctx.moveTo(pl, gy); ctx.lineTo(pl + gw, gy); ctx.stroke();
+  }
+
+  /* Zero RV line */
+  ctx.beginPath();
+  ctx.moveTo(rvToX(0), pt); ctx.lineTo(rvToX(0), pt + gh);
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([4, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* Axis box */
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(pl, pt, gw, gh);
+
+  /* Disc RV marker */
+  if (Math.abs(discRV) < R) {
+    ctx.beginPath();
+    ctx.moveTo(rvToX(discRV), pt); ctx.lineTo(rvToX(discRV), pt + gh);
+    ctx.strokeStyle = 'rgba(94,200,160,0.18)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /* Comet RV marker (when visible) */
+  if (vis > 0.05 && Math.abs(cometRV) < R) {
+    ctx.beginPath();
+    ctx.moveTo(rvToX(cometRV), pt); ctx.lineTo(rvToX(cometRV), pt + gh);
+    ctx.strokeStyle = 'rgba(232,168,123,0.20)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  var N = 700;
+  /* ── Stellar ── */
+  /* var N = 700;
+  ctx.beginPath();
+  for (var m = 0; m <= N; m++) {
+    var rv = (m / N - 0.5) * 2.0 * R;
+    var y  = absToY(specComponents(rv, 0).stellar);
+    var x  = pl + (m / N) * gw;
+    if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#888888';
+  ctx.lineWidth = 1.5;
+  ctx.stroke(); */
+
+  /* ── Disc gas ── */
+  ctx.beginPath();
+  for (var m = 0; m <= N; m++) {
+    var rv = (m / N - 0.5) * 2.0 * R;
+    var y  = absToY(specComponents(rv, 0).disc);
+    var x  = pl + (m / N) * gw;
+    if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#5ec8a0';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  /* ── Exocomet (only when visible) ── */
+  if (vis > 0.005) {
+    ctx.beginPath();
+    for (var m = 0; m <= N; m++) {
+      var rv = (m / N - 0.5) * 2.0 * R;
+      var comp = (lineLabel === 'K')
+        ? specComponents_k(rv, vis)
+        : specComponents_h(rv, vis);
+
+      var total = comp.comet;
+      var y = absToY(total);
+      //var y  = absToY(specComponents(rv, vis).comet);
+      var x  = pl + (m / N) * gw;
+      if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(232,168,123,' + (0.4 + 0.6 * vis) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  /* ── Combined observed ── */
+  ctx.beginPath();
+  for (var m = 0; m <= N; m++) {
+    var rv = (m / N - 0.5) * 2.0 * R;
+    var comp = (lineLabel === 'K')
+      ? specComponents_k(rv, vis)
+      : specComponents_h(rv, vis);
+
+    var y = absToY(comp.disc + comp.comet);
+    //var y  = absToY(specTotal(rv, vis));
+    var x  = pl + (m / N) * gw;
+    if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#7bb8e8';
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  /* Fill under combined */
+  ctx.lineTo(pl + gw, pt + gh * 0.92);
+  ctx.lineTo(pl, pt + gh * 0.92);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(123,184,232,0.07)';
+  ctx.fill();
+
+  /* ── Axis labels ── */
+  ctx.fillStyle = 'rgba(208,220,232,0.40)';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText('0', pl - 4, absToY(0) + 3);
+  ctx.fillText('1', pl - 4, absToY(1) + 3);
+
+  ctx.textAlign = 'center';
+  var ticks = [-300, -200, -100, 0, 100, 200, 300];
+  for (var q = 0; q < ticks.length; q++) {
+    var rv = ticks[q];
+    if (Math.abs(rv) > R) continue;
+    ctx.fillText(rv, rvToX(rv), H - 4);
+    ctx.beginPath();
+    ctx.moveTo(rvToX(rv), pt + gh);
+    ctx.lineTo(rvToX(rv), pt + gh + 3);
+    ctx.strokeStyle = 'rgba(208,220,232,0.25)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+  ctx.fillText('Radial velocity (km s⁻¹)', pl + gw / 2, H - 4);
+
+  ctx.save();
+  ctx.translate(11, pt + gh / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('Normalised depth', 0, 0);
+  ctx.restore();
+
+  /* ── Disc RV annotation ── */
+  if (Math.abs(discRV) < R * 0.85) {
+    ctx.fillStyle = 'rgba(94,200,160,0.55)';
+    ctx.font = '8px Courier New';
+    ctx.textAlign = discRV < 0 ? 'right' : 'left';
+    ctx.fillText('disc', rvToX(discRV) + (discRV < 0 ? -3 : 3), pt + 9);
+  }
+
+  /* ── Comet RV annotation ── */
+  if (vis > 0.08 && Math.abs(cometRV) < R * 0.85) {
+    ctx.fillStyle = 'rgba(232,168,123,0.65)';
+    ctx.font = '8px Courier New';
+    ctx.textAlign = cometRV < 0 ? 'right' : 'left';
+    ctx.fillText((cometRV > 0 ? '+' : '') + cometRV + ' km/s', rvToX(cometRV) + (cometRV < 0 ? -3 : 3), pt + 9);
+  }
+
+  /* ── Status indicator (top-right corner) ── */
+  var statusText = vis > 0.05 ? 'exocomet transit' : 'quiescent';
+  var statusColor = vis > 0.05 ? 'rgba(232,168,123,' + (0.5 + 0.5 * vis) + ')' : 'rgba(208,220,232,0.25)';
+  ctx.fillStyle = statusColor;
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(statusText, pl + gw - 4, pt + 10);
+}
+
+function drawTransitSystem(vis) {
+
+  var ctx = transitCtx;
+
+  var W = transitCvs.clientWidth;
+  var H = transitCvs.clientHeight;
+
+  ctx.clearRect(0,0,W,H);
+
+  ctx.fillStyle = '#08090f';
+  ctx.fillRect(0,0,W,H);
+
+  var pos = cometOrbitPos();
+
+  /*
+    Orbit
+  */
+  ctx.beginPath();
+  ctx.ellipse(pos.cx, pos.cy, W*0.34, H*0.26, 0, 0, Math.PI*2);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  /*
+    Star glow
+  */
+  var starR = H * 0.3;
+
+  var grad = ctx.createRadialGradient(
+    pos.cx, pos.cy, starR*0.3,
+    pos.cx, pos.cy, starR*3
+  );
+
+  grad.addColorStop(0, 'rgba(255,210,120,0.20)');
+  grad.addColorStop(1, 'rgba(255,210,120,0.0)');
+
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR*3, 0, Math.PI*2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  /*
+    Star
+  */
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR, 0, Math.PI*2);
+
+  ctx.fillStyle = '#f5b041';
+  ctx.fill();
+
+  /*
+    Tail direction
+  */
+  var dx = pos.x - pos.cx;
+  var dy = pos.y - pos.cy;
+
+  var dl = Math.sqrt(dx*dx + dy*dy) + 1e-9;
+
+  dx /= dl;
+  dy /= dl;
+
+  /*
+    Tail
+  */
+  var tailL = W * 0.12;
+
+  var tx = pos.x + dx * tailL;
+  var ty = pos.y + dy * tailL;
+
+  var tailGrad = ctx.createLinearGradient(
+    pos.x, pos.y,
+    tx, ty
+  );
+
+  tailGrad.addColorStop(0, 'rgba(140,210,255,0.45)');
+  tailGrad.addColorStop(1, 'rgba(140,210,255,0.0)');
+
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ctx.lineTo(tx, ty);
+
+  ctx.strokeStyle = tailGrad;
+  ctx.lineWidth = 8;
+  ctx.stroke();
+
+  /*
+    Comet
+  */
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 4, 0, Math.PI*2);
+
+  ctx.fillStyle =
+    vis > 0.05
+    ? '#ffffff'
+    : '#9bbad0';
+
+  ctx.fill();
+
+  /*
+    Transit highlight
+  */
+  if (vis > 0.05) {
+
+    ctx.beginPath();
+
+    ctx.arc(pos.x, pos.y, 10 + vis*14, 0, Math.PI*2);
+
+    ctx.strokeStyle =
+      'rgba(000,000,000,' + (0.2 + vis*0.6) + ')';//'rgba(232,168,123,' + (0.2 + vis*0.6) + ')';
+
+    ctx.lineWidth = 5;
+
+    ctx.stroke();
+  }
+}
+
+/* ── animation loop ──────────────────────────── */
+var lastTs = null;
+function frame(ts) {
+  if (!lastTs) lastTs = ts;
+  var dt = Math.min((ts - lastTs) / 1000.0, 0.05);
+  lastTs = ts;
+  if (playing && !userDraggingOrbit) {
+    t = (t + dt * speed * 0.055) % 1.0;
+  } else if (userDraggingOrbit) {
+    // high-resolution smoothing
+    t += (orbitTarget - t) * 0.25;
+  }
+  /*if (playing && !userDraggingOrbit) {
+    t = (t + dt * speed * 0.055) % 1.0;
+  }
+  if (playing) {
+    t = (t + dt * speed * 0.055) % 1.0;
+  }*/
+  orbitSlider.value = t;
+  orbitLabel.textContent = t.toFixed(2);
+
+  var vis = cometVisibility();
+  drawTransitSystem(vis);
+  drawSpecPanel(kCtx, kCvs, 'K', vis);
+  drawSpecPanel(hCtx, hCvs, 'H', vis);
+
+  requestAnimationFrame(frame);
+  console.log(
+    "t:", t.toFixed(3),
+    "vis:", cometVisibility().toFixed(3)
+  );
+}
+requestAnimationFrame(frame);
+
+/* ── controls ────────────────────────────────── */
+document.getElementById('pbtn').addEventListener('click', function () {
+  playing = !playing;
+  this.innerHTML = playing ? '&#9646;&#9646; Pause' : '&#9654; Play';
+  this.classList.toggle('active', playing);
+  if (playing) lastTs = null;
+});
+
+document.getElementById('crv').addEventListener('input', function () {
+  cometRV = parseInt(this.value);
+  document.getElementById('crvv').textContent = (cometRV >= 0 ? '+' : '') + cometRV + ' km/s';
+});
+
+document.getElementById('drv').addEventListener('input', function () {
+  discRV = parseInt(this.value);
+  document.getElementById('drvv').textContent = (discRV >= 0 ? '+' : '') + discRV + ' km/s';
+});
+
+document.getElementById('spd').addEventListener('input', function () {
+  speed = parseFloat(this.value);
+  document.getElementById('spdv').textContent = speed.toFixed(1) + '×';
+});
+
+document.getElementById('rbtn').addEventListener('click', function () {
+  t = 0; lastTs = null;
+});
+orbitSlider.addEventListener('pointerdown', function () {
+  userDraggingOrbit = true;
+  playing = false; // optional but usually feels right
+});
+
+orbitSlider.addEventListener('pointerup', function () {
+  userDraggingOrbit = false;
+});
+
+orbitSlider.addEventListener('pointerleave', function () {
+  userDraggingOrbit = false;
+});
+
+orbitSlider.addEventListener('input', function (e) {
+  orbitTarget = Number(e.target.value);
+  userDraggingOrbit = true;
+  playing = false;
+});
+
+/*orbitSlider.addEventListener('input', function (e) {
+  t = Number(e.target.value);
+  orbitLabel.textContent = t.toFixed(3);
+});*/
+</script>
+</body>
+</html>
